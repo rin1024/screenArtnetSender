@@ -1,0 +1,4 @@
+.gradle/
+build/
+# 実行時供給の本物 jar は配布物に含めない（各自の Processing 環境から配置）
+libs/*.jar

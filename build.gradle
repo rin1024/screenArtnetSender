@@ -1,0 +1,42 @@
+plugins {
+  id 'java-library'
+}
+
+group = 'net.sorauta'
+version = '0.1.0'
+
+// 環境にある JDK21 で 17 ターゲットのバイトコードを出す（toolchain ダウンロードを避ける）
+java {
+  sourceCompatibility = JavaVersion.VERSION_17
+  targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+  mavenCentral()
+}
+
+// 外部 API（Processing core / nclLibraryForP5 / sorauta artnet）は
+// 「コンパイル時のみのスタブ」を別ソースセットに置く。実行時はホスト側の本物の jar が供給する。
+sourceSets {
+  stubs
+}
+
+dependencies {
+  // スタブはコンパイル時だけ classpath に乗せる（jar には含めない）
+  compileOnly sourceSets.stubs.output
+
+  // 本物の jar を使ってその場で動作確認したい場合は libs/ に置けば compileOnly に乗る（任意）
+  compileOnly fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+tasks.withType(JavaCompile).configureEach {
+  options.encoding = 'UTF-8'
+}
+
+jar {
+  // 既定で main ソースセットのみを含む（stubs は含まれない）
+  manifest {
+    attributes('Implementation-Title': 'screenArtnetSender',
+               'Implementation-Version': project.version)
+  }
+}

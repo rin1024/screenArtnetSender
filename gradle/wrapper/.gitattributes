@@ -1,0 +1,3 @@
+# この配下のビルド成果物 jar は Git LFS を使わず通常の git blob として扱う。
+# （ルート .gitattributes の `*.jar filter=lfs` を上書き。小さな jar で LFS 不整合を避ける）
+*.jar -filter -diff -merge -text
