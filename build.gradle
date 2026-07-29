@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'net.sorauta'
-version = '0.1.0'
+version = '1.0.0'
 
 // 環境にある JDK21 で 17 ターゲットのバイトコードを出す（toolchain ダウンロードを避ける）
 java {

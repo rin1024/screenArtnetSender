@@ -73,6 +73,60 @@ public final class ColorGrade {
     }
   }
 
+  /**
+   * pixels の矩形領域 [x0,x1) × [y0,y1) だけをその場で補正する。
+   * 描画内容が帯（バンド）だけの画面では全画素を舐める必要がないための領域版。
+   * 1920×1080 全画素の毎フレーム補正は CPU ボトルネックになる（実測で fps が数分の一に落ちる）。
+   *
+   * <p>さらに コントラスト→明るさ×ゲイン はチャンネル独立なので 256 段 LUT に前計算し、
+   * 画素ごとの計算は彩度のグレー混合だけにする（彩度 1.0 のときは LUT 参照のみ）。
+   * 彩度≠1 のときは混合結果を整数に丸めてから LUT を引くため、逐次 float 計算と
+   * 比べ最大 ±1/255 程度の丸め差が出るが視覚上は同一。
+   */
+  public void applyInPlaceRect(int[] pixels, int imgWidth, int x0, int y0, int x1, int y1) {
+    if (isIdentity()) {
+      return;
+    }
+    int[] lutR = buildChannelLut(rGain);
+    int[] lutG = buildChannelLut(gGain);
+    int[] lutB = buildChannelLut(bGain);
+    boolean satIdentity = (saturation == 1f);
+    for (int y = y0; y < y1; y++) {
+      int row = y * imgWidth;
+      for (int x = x0; x < x1; x++) {
+        int idx = row + x;
+        int argb = pixels[idx];
+        int a = argb & 0xFF000000;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        if (!satIdentity) {
+          float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+          r = clamp255(Math.round(gray + (r - gray) * saturation));
+          g = clamp255(Math.round(gray + (g - gray) * saturation));
+          b = clamp255(Math.round(gray + (b - gray) * saturation));
+        }
+        pixels[idx] = a | (lutR[r] << 16) | (lutG[g] << 8) | lutB[b];
+      }
+    }
+  }
+
+  /** gradeChannel と同じ式（コントラスト→明るさ×ゲイン→クランプ）の 256 段 LUT。 */
+  private int[] buildChannelLut(float gain) {
+    int[] lut = new int[256];
+    for (int i = 0; i < 256; i++) {
+      float v = (i / 255f - 0.5f) * contrast + 0.5f;
+      v *= brightness * gain;
+      int o = Math.round(v * 255f);
+      lut[i] = o < 0 ? 0 : (o > 255 ? 255 : o);
+    }
+    return lut;
+  }
+
+  private static int clamp255(int v) {
+    return v < 0 ? 0 : (v > 255 ? 255 : v);
+  }
+
   /** 元配列を変えずに、補正済みの新しい配列を返す。 */
   public int[] applyCopy(int[] pixels) {
     int[] out = new int[pixels.length];

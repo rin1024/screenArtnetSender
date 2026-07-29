@@ -70,6 +70,29 @@ public class ScreenArtnetSender {
     this.grade = (grade != null) ? grade : ColorGrade.IDENTITY;
   }
 
+  /** 色補正を適用する画面上の矩形（[x0,y0]〜[x1,y1) ピクセル）。x0 < 0 なら全画面。 */
+  private int gradeX0 = -1;
+  private int gradeY0;
+  private int gradeX1;
+  private int gradeY1;
+
+  /**
+   * 描画内容が帯（バンド）だけの画面向けに、色補正の適用範囲を限定する。
+   * 全デバイスのサンプル位置がこの矩形内にあることが前提（外にあるデバイスは
+   * 未補正の画素をサンプルする）。伸縮表示に追従できるよう毎フレーム設定してよい。
+   */
+  public void setGradeRegion(int x0, int y0, int x1, int y1) {
+    gradeX0 = Math.max(0, x0);
+    gradeY0 = Math.max(0, y0);
+    gradeX1 = x1;
+    gradeY1 = y1;
+  }
+
+  /** 色補正の適用範囲の限定を解除する（全画面に戻す）。 */
+  public void clearGradeRegion() {
+    gradeX0 = -1;
+  }
+
   /** 読み込めたデバイス（= ArtNet universe）の数。 */
   public int deviceCount() {
     return devices.length;
@@ -90,7 +113,12 @@ public class ScreenArtnetSender {
 
     if (!grade.isIdentity()) {
       if (gradeScreenInPlace) {
-        grade.applyInPlace(app.pixels);
+        if (gradeX0 >= 0) {
+          grade.applyInPlaceRect(app.pixels, app.width,
+            gradeX0, gradeY0, Math.min(gradeX1, app.width), Math.min(gradeY1, app.height));
+        } else {
+          grade.applyInPlace(app.pixels);
+        }
         app.updatePixels();   // 画面（プレビュー）へ反映。pixels 配列はそのまま使える
         sampleSrc = app.pixels;
       } else {
@@ -100,6 +128,33 @@ public class ScreenArtnetSender {
 
     for (ArtnetSendDevice d : devices) {
       d.update(sampleSrc);
+      if (sendEnabled) {
+        d.send();
+      }
+    }
+  }
+
+  /**
+   * 呼び出し側が用意済みの pixels 配列からサンプルして送る。
+   * {@code loadPixels()} / {@code updatePixels()} も色補正も<b>行わない</b>
+   * （どちらも呼び出し側の責務）。
+   *
+   * <p>1 フレームに複数の送信器を使う構成向け。{@link #sendFromScreen(boolean)} は
+   * 呼ぶたびに画面の全画素を読み戻す（GPU→CPU）ため、1 フレームに 2 回呼ぶと
+   * その読み戻しと書き戻しも 2 回走る。1920×1080 では 1 往復あたり
+   * 約 200 万画素の転送＋変換になり、これが fps の主要なボトルネックになる。
+   * 呼び出し側で {@code loadPixels()} を 1 回だけ行い、色補正・帯の生成まで
+   * 済ませた pixels を本メソッドへ渡し、最後に {@code updatePixels()} を 1 回呼ぶと、
+   * 往復がフレームあたり 1 回で済む。
+   *
+   * @param pixels ARGB(0xAARRGGBB) の画面画素。長さは {@code app.width * app.height} 前提
+   */
+  public void sendFromPixels(int[] pixels) {
+    if (devices.length == 0 || pixels == null) {
+      return;
+    }
+    for (ArtnetSendDevice d : devices) {
+      d.update(pixels);
       if (sendEnabled) {
         d.send();
       }
